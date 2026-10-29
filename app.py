@@ -1,3 +1,4 @@
+
 import html
 import re
 from pathlib import Path
@@ -9,12 +10,6 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
-# -------------------------------------------------
-# HATE-SHIELD AI | Streamlit web application
-# Dataset columns: tweet, class
-# Labels: 0 = Hate Speech, 1 = Offensive Language, 2 = Neither
-# -------------------------------------------------
-
 BASE_DIR = Path(__file__).resolve().parent
 DATASET_PATH = BASE_DIR / "twitter_data.csv"
 MODEL_PATH = BASE_DIR / "hate_speech_model.joblib"
@@ -24,20 +19,22 @@ LABEL_NAMES = {
     1: "Offensive Language",
     2: "Neither",
 }
+
 LABEL_DESCRIPTIONS = {
-    0: "The model detected language it associates with hate speech.",
-    1: "The model detected language it associates with offensive content.",
+    0: "The model detected language associated with hate speech.",
+    1: "The model detected language associated with offensive content.",
     2: "The model did not classify this text as hate speech or offensive language.",
 }
-LABEL_ICONS = {0: "🛡️", 1: "⚠️", 2: "✅"}
+
+LABEL_ICONS = {0: "🛡️", 1: "⚠️", 2: "✓"}
+RESULT_CLASSES = {0: "hate", 1: "offensive", 2: "safe"}
 
 
 def clean_tweet(text):
     text = html.unescape(str(text))
     text = re.sub(r"https?://\S+|www\.\S+", " URL ", text)
     text = re.sub(r"@\w+", " USER ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def build_model():
@@ -59,24 +56,19 @@ def build_model():
 
 @st.cache_resource(show_spinner=False)
 def load_or_train_model():
-    """Load the saved pipeline, or train and save one if it is missing."""
     if MODEL_PATH.exists():
-        return joblib.load(MODEL_PATH), "loaded"
+        return joblib.load(MODEL_PATH)
 
     if not DATASET_PATH.exists():
         raise FileNotFoundError(
-            "twitter_data.csv was not found. Put it in the same folder as app.py."
+            "twitter_data.csv is missing. Add it beside app.py."
         )
 
     df = pd.read_csv(DATASET_PATH)
     df.columns = df.columns.astype(str).str.strip()
 
-    missing = {"tweet", "class"} - set(df.columns)
-    if missing:
-        raise ValueError(
-            "The CSV must contain columns named 'tweet' and 'class'. "
-            f"Missing: {', '.join(sorted(missing))}"
-        )
+    if not {"tweet", "class"}.issubset(df.columns):
+        raise ValueError("CSV needs columns named tweet and class.")
 
     df = df[["tweet", "class"]].dropna().copy()
     df["tweet"] = df["tweet"].map(clean_tweet)
@@ -89,25 +81,26 @@ def load_or_train_model():
     df = df.drop_duplicates(subset=["tweet", "class"])
 
     if df.empty or df["class"].nunique() < 2:
-        raise ValueError("The dataset does not contain enough valid classes to train.")
+        raise ValueError("Not enough valid classes to train the model.")
 
     model = build_model()
     model.fit(df["tweet"], df["class"])
     joblib.dump(model, MODEL_PATH)
-    return model, "trained"
+    return model
 
 
 def predict_text(model, text):
     cleaned = clean_tweet(text)
     prediction = int(model.predict([cleaned])[0])
     probabilities = model.predict_proba([cleaned])[0]
-    model_classes = model.named_steps["classifier"].classes_
-    scores = {int(label): float(score) for label, score in zip(model_classes, probabilities)}
-    confidence = scores.get(prediction, 0.0)
-    return prediction, confidence, scores
+    classes = model.named_steps["classifier"].classes_
+    scores = {
+        int(label): float(score)
+        for label, score in zip(classes, probabilities)
+    }
+    return prediction, scores
 
 
-# Page setup
 st.set_page_config(
     page_title="Hate-Shield AI",
     page_icon="🛡️",
@@ -117,107 +110,310 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
-    .stApp {
-        background:
-            radial-gradient(ellipse at 10% 0%, rgba(44, 100, 180, .17), transparent 35%),
-            radial-gradient(ellipse at 100% 25%, rgba(42, 177, 157, .10), transparent 30%),
-            #0b1020;
-        color: #eef3ff;
-        font-family: 'DM Sans', sans-serif;
-    }
-    [data-testid="stHeader"] { background: rgba(11,16,32,0); }
-    .block-container { max-width: 850px; padding-top: 2rem; padding-bottom: 3rem; }
-    h1, h2, h3 { font-family: 'Space Grotesk', sans-serif !important; color: #f5f7ff !important; }
-    .brand-row { display:flex; align-items:center; gap:12px; margin-bottom: 1rem; }
-    .brand-mark {
-        width:52px; height:52px; border-radius:16px; display:flex; align-items:center;
-        justify-content:center; font-size:26px;
-        background:linear-gradient(135deg,#173d72,#147d83);
-        border:1px solid rgba(140,202,255,.35);
-        box-shadow:0 8px 30px rgba(20,125,131,.2);
-    }
-    .brand-name { font-family:'Space Grotesk',sans-serif; font-size:1.45rem; font-weight:700; letter-spacing:.04em; }
-    .brand-sub { color:#9aabc9; font-size:.88rem; margin-top:2px; }
-    .hero {
-        padding: 1.5rem 1.55rem; border-radius:24px;
-        border:1px solid rgba(151,177,224,.18);
-        background:linear-gradient(135deg,rgba(23,39,72,.94),rgba(16,32,53,.88));
-        margin: 1rem 0 1.2rem;
-    }
-    .eyebrow { color:#71d9d0; text-transform:uppercase; letter-spacing:.16em; font-size:.72rem; font-weight:700; }
-    .hero-title { font-family:'Space Grotesk',sans-serif; font-size:2rem; line-height:1.15; font-weight:700; margin:.55rem 0; }
-    .hero-copy { color:#b9c7df; line-height:1.6; margin-bottom:0; }
-    .section-label { color:#dce6fb; font-weight:700; font-size:1.05rem; margin:.8rem 0 .5rem; }
-    .hint { color:#93a4c4; font-size:.84rem; }
-    .result-card {
-        padding:1.3rem 1.4rem; border-radius:20px; margin-top:1rem;
-        background:rgba(18,31,54,.92); border:1px solid rgba(151,177,224,.2);
-    }
-    .result-kicker { color:#9aabc9; text-transform:uppercase; letter-spacing:.12em; font-size:.72rem; font-weight:700; }
-    .result-title { font-family:'Space Grotesk',sans-serif; font-size:1.7rem; font-weight:700; margin:.45rem 0; }
-    .result-copy { color:#bdcbe1; line-height:1.55; }
-    .small-note { color:#91a1bd; font-size:.78rem; line-height:1.5; }
-    div.stButton > button {
-        border:0; border-radius:12px; min-height:3rem; font-weight:700;
-        background:linear-gradient(90deg,#4e8cff,#20b8ad); color:white;
-        width:100%;
-    }
-    div.stButton > button:hover { border:0; color:white; filter:brightness(1.08); }
-    .stTextArea textarea {
-        background:#101a2d !important; color:#edf3ff !important;
-        border:1px solid #30415f !important; border-radius:14px !important;
-    }
-    [data-testid="stMetric"] {
-        background:rgba(18,31,54,.72); padding:12px 15px; border-radius:14px;
-        border:1px solid rgba(151,177,224,.14);
-    }
-    hr { border-color:rgba(151,177,224,.16); }
-    footer { visibility:hidden; }
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+    --bg: #020b0e;
+    --panel: #06191d;
+    --teal: #20f5c5;
+    --muted: #9db9b8;
+}
+
+.stApp {
+    background:
+        radial-gradient(ellipse at 50% 5%, #07302e 0%, transparent 48%),
+        linear-gradient(150deg, #02090d, #031517 65%, #02090d);
+    color: #effffb;
+    font-family: 'Inter', sans-serif;
+}
+[data-testid="stHeader"] { background: transparent; }
+.block-container {
+    max-width: 850px;
+    padding: 1.4rem 1rem 3rem;
+}
+h1, h2, h3 {
+    font-family: 'Space Grotesk', sans-serif !important;
+    color: #f2fffc !important;
+}
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0 22px;
+    border-bottom: 1px solid #16413e;
+}
+.brand-icon {
+    border: 1px solid #20f5c5;
+    border-radius: 12px;
+    width: 43px;
+    height: 43px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #20f5c5;
+    font-size: 25px;
+    background: #062522;
+}
+.brand-name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 1.12rem;
+    letter-spacing: .02em;
+}
+.brand-name span { color: #20f5c5; }
+.brand-sub { font-size: .75rem; color: #8daaa8; }
+.status-pill {
+    margin-left: auto;
+    border: 1px solid #176b5c;
+    border-radius: 30px;
+    padding: 7px 10px;
+    color: #5df8d3;
+    font-size: .65rem;
+    white-space: nowrap;
+}
+.hero {
+    text-align: center;
+    padding: 30px 8px 20px;
+}
+.hero-shield {
+    margin: 0 auto 13px;
+    width: 104px;
+    height: 104px;
+    border-radius: 32px;
+    border: 2px solid #20f5c5;
+    background: radial-gradient(circle, #0b4b42, #041a1d 72%);
+    box-shadow: 0 0 35px #00eac333, inset 0 0 22px #00eac322;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #20f5c5;
+    font-size: 54px;
+}
+.hero h1 {
+    font-size: clamp(2.2rem, 8vw, 3.5rem) !important;
+    line-height: 1.08;
+    letter-spacing: -.05em;
+    margin: 8px 0 !important;
+}
+.hero h1 span { color: #20f5c5; }
+.tagline {
+    color: #20f5c5;
+    font-weight: 700;
+    font-size: 1rem;
+}
+.hero-copy {
+    max-width: 510px;
+    margin: 10px auto 0;
+    color: #a9c4c0;
+    font-size: .88rem;
+    line-height: 1.65;
+}
+.section-heading {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 1.12rem;
+    margin: 18px 0 12px;
+}
+.feature {
+    min-height: 142px;
+    background: linear-gradient(145deg, #082a2a, #061619);
+    border: 1px solid #17635a;
+    border-radius: 16px;
+    padding: 16px 13px;
+    margin: 4px 0;
+}
+.feature-icon {
+    font-size: 1.6rem;
+    margin-bottom: 8px;
+}
+.feature-title {
+    font-weight: 700;
+    color: #eafffa;
+    font-size: .9rem;
+    margin-bottom: 7px;
+}
+.feature-copy {
+    color: #9dbbb5;
+    font-size: .76rem;
+    line-height: 1.5;
+}
+.panel {
+    background: linear-gradient(145deg, #082124, #041316);
+    border: 1px solid #17635a;
+    border-radius: 18px;
+    padding: 20px;
+    margin-top: 12px;
+}
+.eyebrow {
+    color: #20f5c5;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+}
+.stTextArea textarea {
+    background: #020e11 !important;
+    color: #eafffa !important;
+    border: 1px solid #21665d !important;
+    border-radius: 12px !important;
+    font-size: 1rem !important;
+}
+.stTextArea textarea:focus {
+    border-color: #20f5c5 !important;
+    box-shadow: 0 0 0 1px #20f5c5 !important;
+}
+div.stButton > button {
+    width: 100%;
+    min-height: 3rem;
+    border-radius: 12px;
+    border: 1px solid #20f5c5;
+    background: linear-gradient(90deg, #20f5c5, #10c9a4);
+    color: #02211c;
+    font-weight: 800;
+    transition: .2s;
+}
+div.stButton > button:hover {
+    border-color: #8bffe5;
+    color: #001b17;
+    filter: brightness(1.08);
+}
+.result {
+    padding: 22px;
+    margin-top: 15px;
+    border-radius: 16px;
+    background: #061b1d;
+    border: 1px solid #27776a;
+}
+.result.hate { border-color: #ff6078; }
+.result.offensive { border-color: #ffbd55; }
+.result.safe { border-color: #20f5c5; }
+.result-label {
+    color: #9db9b8;
+    text-transform: uppercase;
+    letter-spacing: .13em;
+    font-size: .7rem;
+    font-weight: 700;
+}
+.result-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.7rem;
+    font-weight: 700;
+    margin: 8px 0;
+}
+.hate .result-title { color: #ff7187; }
+.offensive .result-title { color: #ffca70; }
+.safe .result-title { color: #20f5c5; }
+.result-copy {
+    color: #b3cbc6;
+    font-size: .9rem;
+    line-height: 1.6;
+}
+div[data-testid="stMetric"] {
+    background: #061b1d;
+    border: 1px solid #164b44;
+    border-radius: 12px;
+    padding: 12px;
+}
+div[data-testid="stMetricLabel"] { color: #9db9b8; }
+div[data-testid="stMetricValue"] { color: #20f5c5; }
+hr { border-color: #16413e; }
+div[data-testid="stExpander"] {
+    border-color: #164b44;
+    border-radius: 12px;
+}
+.footer {
+    text-align: center;
+    color: #789794;
+    font-size: .74rem;
+    line-height: 1.7;
+    padding: 20px 0 5px;
+}
+div[data-testid="stCaptionContainer"] { color: #9db9b8; }
+@media (max-width: 600px) {
+    .status-pill { font-size: .57rem; padding: 6px; }
+    .panel { padding: 14px; }
+    .feature { min-height: 130px; padding: 12px 9px; }
+}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
-<div class="brand-row">
-  <div class="brand-mark">🛡️</div>
+<div class="brand">
+  <div class="brand-icon">⛨</div>
   <div>
-    <div class="brand-name">HATE-SHIELD AI</div>
-    <div class="brand-sub">Responsible text analysis · Class XII AI Capstone</div>
+    <div class="brand-name">HATE-SHIELD <span>AI</span></div>
+    <div class="brand-sub">Responsible text analysis</div>
   </div>
+  <div class="status-pill">◉ AI TEXT DETECTOR</div>
 </div>
+
 <div class="hero">
-  <div class="eyebrow">AI-powered text classification</div>
-  <div class="hero-title">Make online conversations safer.</div>
-  <p class="hero-copy">Enter a message below to see how the machine-learning model classifies its language. This is a learning prototype, not a final judge of a person's intent.</p>
+  <div class="hero-shield">⛨</div>
+  <h1>Hate-Shield <span>AI</span></h1>
+  <div class="tagline">Safer Internet. Kinder Communities.</div>
+  <div class="hero-copy">
+    Detect hate speech, offensive language and harmful content
+    using machine learning. Help promote respectful online conversations.
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-with st.expander("How it works"):
-    st.write(
-        "Hate-Shield AI uses a TF-IDF text representation and a Logistic Regression "
-        "classifier trained on the supplied CSV dataset. It returns one of three "
-        "dataset labels: Hate Speech, Offensive Language, or Neither."
+c1, c2, c3 = st.columns(3)
+
+with c1:
+    st.markdown("""
+    <div class="feature">
+      <div class="feature-icon">🛡️</div>
+      <div class="feature-title">Detect Hate Speech</div>
+      <div class="feature-copy">Identify language associated with hate and discrimination.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c2:
+    st.markdown("""
+    <div class="feature">
+      <div class="feature-icon">▣</div>
+      <div class="feature-title">Identify Offensive Language</div>
+      <div class="feature-copy">Flag language the model associates with offensive content.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c3:
+    st.markdown("""
+    <div class="feature">
+      <div class="feature-icon">✓</div>
+      <div class="feature-title">Keep the Internet Safer</div>
+      <div class="feature-copy">Support respectful and positive communication.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown('<div class="section-heading">01 / Analyse a message</div>',
+            unsafe_allow_html=True)
+
+with st.container(border=True):
+    st.markdown('<div class="eyebrow">Message input</div>',
+                unsafe_allow_html=True)
+    user_text = st.text_area(
+        "Message to analyse",
+        placeholder="Type or paste a message here...",
+        height=140,
+        max_chars=5000,
+        label_visibility="collapsed",
+        key="message_input",
     )
+    st.caption("Enter a message to classify. Avoid personal information.")
 
-st.markdown('<div class="section-label">01 / Enter a message</div>', unsafe_allow_html=True)
-user_text = st.text_area(
-    "Message to analyse",
-    placeholder="Type or paste a message here…",
-    height=145,
-    max_chars=5000,
-    label_visibility="collapsed",
-)
-st.markdown('<div class="hint">Tip: use a complete sentence for a more useful test. Avoid entering personal information.</div>', unsafe_allow_html=True)
-
-col1, col2 = st.columns([3, 1])
-with col1:
-    detect_clicked = st.button("Analyse message  →", use_container_width=True)
-with col2:
-    clear_clicked = st.button("Clear", use_container_width=True)
+    left, right = st.columns([3, 1])
+    with left:
+        detect_clicked = st.button(
+            "🛡️  Analyse message", use_container_width=True
+        )
+    with right:
+        clear_clicked = st.button("Clear", use_container_width=True)
 
 if clear_clicked:
-    st.session_state["last_text"] = ""
     st.session_state["last_result"] = None
+    st.session_state["message_input"] = ""
     st.rerun()
 
 if detect_clicked:
@@ -225,37 +421,44 @@ if detect_clicked:
         st.warning("Please enter a message before analysing it.")
     else:
         try:
-            with st.spinner("Preparing the model and analysing text…"):
-                model, model_status = load_or_train_model()
-                prediction, confidence, scores = predict_text(model, user_text)
-            st.session_state["last_text"] = user_text
+            with st.spinner("Loading model and analysing message..."):
+                model = load_or_train_model()
+                prediction, scores = predict_text(model, user_text)
+
             st.session_state["last_result"] = {
+                "text": user_text,
                 "prediction": prediction,
-                "confidence": confidence,
                 "scores": scores,
-                "model_status": model_status,
             }
         except Exception as exc:
             st.error(f"Could not run the detector: {exc}")
 
 result = st.session_state.get("last_result")
+
 if result:
     pred = result["prediction"]
     title = LABEL_NAMES.get(pred, "Unknown")
     icon = LABEL_ICONS.get(pred, "🔎")
-    st.markdown("---")
-    st.markdown('<div class="section-label">02 / Model result</div>', unsafe_allow_html=True)
+    css_class = RESULT_CLASSES.get(pred, "safe")
+    confidence = result["scores"].get(pred, 0.0)
+
+    st.markdown('<div class="section-heading">02 / Detection result</div>',
+                unsafe_allow_html=True)
+
     st.markdown(
-        f'<div class="result-card"><div class="result-kicker">Classification result</div>'
+        f'<div class="result {css_class}">'
+        f'<div class="result-label">Classification result</div>'
         f'<div class="result-title">{icon} {title}</div>'
-        f'<div class="result-copy">{LABEL_DESCRIPTIONS.get(pred, "")}</div></div>',
+        f'<div class="result-copy">{LABEL_DESCRIPTIONS.get(pred, "")}</div>'
+        f'</div>',
         unsafe_allow_html=True,
     )
-    c1, c2 = st.columns(2)
-    with c1:
-        st.metric("Model score", f"{result['confidence'] * 100:.1f}%")
-    with c2:
-        st.metric("Characters analysed", f"{len(st.session_state.get('last_text', '')):,}")
+
+    a, b = st.columns(2)
+    with a:
+        st.metric("Model score", f"{confidence * 100:.1f}%")
+    with b:
+        st.metric("Characters analysed", f"{len(result['text']):,}")
 
     with st.expander("View all class scores"):
         for label_id in [0, 1, 2]:
@@ -264,14 +467,23 @@ if result:
             st.progress(min(max(score, 0.0), 1.0))
 
     st.caption(
-        "Important: the score is the model's estimated class probability, not a guarantee "
-        "of correctness. Slang, sarcasm, context, dialect, and dataset bias can affect results. "
-        "Use human review for real decisions."
+        "The score is the model's estimated class probability, not a "
+        "guarantee of correctness. Context, sarcasm, slang and dataset "
+        "bias can affect predictions. Human review is important."
     )
 
-st.markdown("---")
-st.markdown(
-    '<div class="small-note">HATE-SHIELD AI · Educational prototype · '
-    'Predictions may be wrong and should not be used alone to moderate or penalise people.</div>',
-    unsafe_allow_html=True,
-)
+with st.expander("About Hate-Shield AI"):
+    st.write(
+        "Hate-Shield AI is a Class XII Artificial Intelligence capstone "
+        "project. It uses TF-IDF text features and Logistic Regression "
+        "to classify text into three dataset categories: Hate Speech, "
+        "Offensive Language, and Neither."
+    )
+
+st.markdown("""
+<div class="footer">
+  🛡️ HATE-SHIELD AI · CLASS XII AI CAPSTONE<br>
+  Educational prototype · Predictions can be incorrect.
+  Do not use this model alone to penalise people.
+</div>
+""", unsafe_allow_html=True)
