@@ -762,5 +762,9 @@ st.markdown("""
 
 st.markdown("""
 <div class="footer">
-  🛡️ HATE-SHIELD AI · CLASS XII AI CAPSTONE<
+  🛡️ HATE-SHIELD AI · CLASS XII AI CAPSTONE<br>
+  Safer Internet. Kinder Communities.<br>
+  Educational prototype · Predictions require human judgement.
+</div>
+""", unsafe_allow_html=True)
 
